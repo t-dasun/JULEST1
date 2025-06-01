@@ -9,6 +9,7 @@ const Navbar = () => {
   return (
     <nav style={{ padding: '1rem', background: '#eee', display: 'flex', gap: '1rem', alignItems: 'center' }}>
       <Link to="/">Home</Link>
+      <Link to="/restaurants">Restaurants</Link> {/* Added link */}
       {isAuthenticated ? (
         <>
           <Link to="/dashboard">Dashboard</Link>

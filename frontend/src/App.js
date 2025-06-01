@@ -4,10 +4,12 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import Navbar from './components/Navbar'; // Adjust path
 import HomePage from './pages/HomePage';   // Adjust path
 import LoginPage from './pages/LoginPage'; // Adjust path
-import RegisterPage from './pages/RegisterPage'; // Adjust path
-import DashboardPage from './pages/DashboardPage'; // Adjust path
-import ProtectedRoute from './components/ProtectedRoute'; // Adjust path
-import './App.css'; // Keep or modify
+import RegisterPage from './pages/RegisterPage';
+import DashboardPage from './pages/DashboardPage';
+import ProtectedRoute from './components/ProtectedRoute';
+import RestaurantListPage from './pages/RestaurantListPage'; // Added
+import RestaurantDetailPage from './pages/RestaurantDetailPage'; // Added
+import './App.css';
 
 function App() {
   return (
@@ -18,6 +20,8 @@ function App() {
           <Route path="/" element={<HomePage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/restaurants" element={<RestaurantListPage />} /> {/* Added */}
+          <Route path="/restaurants/:restaurantId" element={<RestaurantDetailPage />} /> {/* Added */}
           <Route element={<ProtectedRoute />}>
             <Route path="/dashboard" element={<DashboardPage />} />
             {/* Other protected routes can be added here */}
