@@ -26,7 +26,7 @@ if __name__ == '__main__':
     # This part will not run when imported, but can be used for direct testing of this file.
     test_url = "https://www.example.com"
     qr_bytes = generate_qr_code_to_bytes(test_url)
-    
+
     # To save to a file for testing:
     # with open("test_qr.png", "wb") as f:
     #     f.write(qr_bytes)

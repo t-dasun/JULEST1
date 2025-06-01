@@ -1,21 +1,39 @@
-from rest_framework import generics, permissions, views # Added views for APIView
-from django.http import Http404, HttpResponse # Added HttpResponse
+from rest_framework import generics, permissions, views, status # Added status
+from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.pagination import PageNumberPagination
+from rest_framework.response import Response # Added Response
 from .serializers import RestaurantSerializer, MenuSerializer, MenuItemSerializer
 from .models import Restaurant, Menu, MenuItem
-from users.models import User
-from .utils import generate_qr_code_to_bytes # Added QR code utility
+from users.models import User # Assuming User model is in users.models
+from orders_app.models import Order # Added Order model
+from orders_app.serializers import OrderDetailSerializer # Added OrderDetailSerializer
+from .utils import generate_qr_code_to_bytes
+
+
+# Pagination Class
+class StandardResultsSetPagination(PageNumberPagination):
+    page_size = 10 # Default page size
+    page_size_query_param = 'page_size'
+    max_page_size = 100
 
 
 class RestaurantListCreateView(generics.ListCreateAPIView):
     """
-    Allows authenticated users (restaurant owners) to create a new restaurant.
-    Listing all restaurants is also supported.
+    Handles GET requests for listing all restaurants (public, paginated)
+    and POST requests for creating a new restaurant (owner only).
     """
-    queryset = Restaurant.objects.all()
+    queryset = Restaurant.objects.all().order_by('id') # Added order_by for consistent pagination
     serializer_class = RestaurantSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardResultsSetPagination # Added pagination
+
+    def get_permissions(self):
+        if self.request.method == 'POST':
+            self.permission_classes = [permissions.IsAuthenticated]
+        else: # GET or other methods
+            self.permission_classes = [permissions.AllowAny]
+        return super().get_permissions()
 
     def perform_create(self, serializer):
         """
@@ -90,6 +108,17 @@ class MyRestaurantDetailView(generics.RetrieveUpdateAPIView):
         return obj
 
 
+class PublicRestaurantDetailView(generics.RetrieveAPIView):
+    """
+    Handles GET requests for retrieving a single restaurant's details (public).
+    Uses the RestaurantSerializer which includes active menus and available items.
+    """
+    queryset = Restaurant.objects.all() # Consider .filter(is_approved=True) if applicable
+    serializer_class = RestaurantSerializer
+    permission_classes = [permissions.AllowAny]
+    lookup_field = 'id' # To match the URL: /api/restaurants/<id>/
+
+
 # Menu Views
 class MenuListCreateView(generics.ListCreateAPIView):
     serializer_class = MenuSerializer
@@ -128,6 +157,73 @@ class MenuDetailView(generics.RetrieveUpdateDestroyAPIView):
         instance.delete()
 
 
+# Restaurant Owner Order Management Views
+
+class RestaurantOrderListView(generics.ListAPIView):
+    serializer_class = OrderDetailSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+
+    def get_queryset(self):
+        if self.request.user.role != 'owner':
+            raise PermissionDenied("You do not have permission to perform this action.")
+        restaurant = get_object_or_404(Restaurant, owner=self.request.user)
+        return Order.objects.filter(restaurant=restaurant).order_by('-created_at')
+
+
+class RestaurantOrderDetailView(generics.RetrieveAPIView):
+    serializer_class = OrderDetailSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_url_kwarg = 'order_id'
+
+    def get_queryset(self):
+        if self.request.user.role != 'owner':
+            raise PermissionDenied("You do not have permission to perform this action.")
+        restaurant = get_object_or_404(Restaurant, owner=self.request.user)
+        return Order.objects.filter(restaurant=restaurant)
+
+    def get_object(self):
+        queryset = self.get_queryset() # This already filters by restaurant and checks role.
+        obj = get_object_or_404(queryset, id=self.kwargs[self.lookup_url_kwarg])
+        # No need to call self.check_object_permissions(request, obj) as queryset is already scoped.
+        return obj
+
+
+class RestaurantOrderUpdateStatusView(generics.UpdateAPIView):
+    serializer_class = OrderDetailSerializer # For the response
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_url_kwarg = 'order_id'
+
+    def get_queryset(self):
+        if self.request.user.role != 'owner':
+            raise PermissionDenied("You do not have permission to perform this action.")
+        restaurant = get_object_or_404(Restaurant, owner=self.request.user)
+        return Order.objects.filter(restaurant=restaurant)
+
+    def update(self, request, *args, **kwargs):
+        order = self.get_object() # This uses get_queryset to ensure ownership
+        new_status = request.data.get('status')
+
+        if not new_status:
+            return Response({'detail': 'Status not provided.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        valid_statuses = [s[0] for s in Order.ORDER_STATUS_CHOICES]
+        if new_status not in valid_statuses:
+            return Response({'detail': 'Invalid status provided.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Optional: Add more sophisticated status transition logic here
+        # For example, a restaurant owner might not be able to set status to 'delivered' if order_type is 'dine-in'
+        # or revert a 'delivered' order back to 'pending'.
+        # For now, we allow any valid status to be set by the owner.
+
+        order.status = new_status
+        order.save(update_fields=['status'])
+
+        # Return the updated order
+        response_serializer = OrderDetailSerializer(order)
+        return Response(response_serializer.data)
+
+
 class MenuQRCodeView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -136,7 +232,7 @@ class MenuQRCodeView(views.APIView):
         # Construct the frontend URL. This is a placeholder and might need adjustment
         # based on the actual frontend routing and domain.
         frontend_url = f"https://manu.lk/restaurants/{menu.restaurant.id}/menus/{menu.id}"
-        
+
         qr_bytes = generate_qr_code_to_bytes(frontend_url)
         return HttpResponse(qr_bytes, content_type="image/png")
 

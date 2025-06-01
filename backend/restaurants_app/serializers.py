@@ -7,12 +7,13 @@ class RestaurantSerializer(serializers.ModelSerializer):
     # owner = UserDetailSerializer(read_only=True)
     # Or, if you want to allow setting owner by ID during creation (though typically set by request user):
     # owner = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
+    active_menus = serializers.SerializerMethodField() # Added for active menus
 
     class Meta:
         model = Restaurant
         fields = [
             'id',
-            'owner',
+            # 'owner', # For public browsing, owner details might not be needed or simplified. Keeping it for now.
             'name',
             'address',
             'phone_number',
@@ -20,10 +21,17 @@ class RestaurantSerializer(serializers.ModelSerializer):
             'cuisine_type',
             'logo_url',
             'operating_hours',
+            'active_menus', # Added field
             'created_at',
             'updated_at',
         ]
         read_only_fields = ['owner'] # Owner is typically set based on the authenticated user.
+
+    def get_active_menus(self, obj):
+        # obj is the Restaurant instance
+        # 'menus' is the related_name from Restaurant.menus
+        active_menus_queryset = obj.menus.filter(is_active=True)
+        return MenuSerializer(active_menus_queryset, many=True, context=self.context).data
 
 
 class MenuItemSerializer(serializers.ModelSerializer):
@@ -61,18 +69,27 @@ class MenuItemSerializer(serializers.ModelSerializer):
 
 
 class MenuSerializer(serializers.ModelSerializer):
-    items = MenuItemSerializer(many=True, read_only=True)
+    # items = MenuItemSerializer(many=True, read_only=True) # Replaced by available_items
+    available_items = serializers.SerializerMethodField() # Added for available items
 
     class Meta:
         model = Menu
         fields = [
             'id',
-            'restaurant',
+            # 'restaurant', # For public browsing, restaurant ID might be implicit. Keeping it for now.
             'name',
             'description',
             'is_active',
-            'items', # Nested menu items
+            'available_items', # Replaced 'items'
             'created_at',
             'updated_at',
         ]
+        # 'restaurant' is a ForeignKey, so it's represented by its ID by default, which is fine.
+        # If we wanted to remove it from public view, we'd remove it from fields.
+        # For now, keeping it as it links back to the Restaurant.
         read_only_fields = ['restaurant'] # Restaurant is typically set based on context
+
+    def get_available_items(self, obj):
+        # obj is the Menu instance
+        available_items_queryset = obj.items.filter(is_available=True) # 'items' is the related_name from Menu.items
+        return MenuItemSerializer(available_items_queryset, many=True, context=self.context).data
